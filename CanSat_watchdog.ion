@@ -1,0 +1,114 @@
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP280.h>
+#include <SPI.h>
+#include <LoRa.h>
+#include <TinyGPS++.h>
+#include <Adafruit_MPU6050.h>
+#include <avr/wdt.h> // Include watchdog timer library
+
+// Set up BMP280 pressure sensor
+Adafruit_BMP280 bmp; // Default constructor uses I2C
+
+// Set up LoRa module
+const int csPin = 8;
+const int resetPin = 9;
+const int irqPin = 7;
+
+// Set up GPS module
+TinyGPSPlus gps;
+
+// Set up MPU6050 accelerometer/gyroscope
+Adafruit_MPU6050 mpu;
+
+void setup() {
+  // Initialize serial communication for debugging
+  Serial.begin(9600);
+
+  // Initialize BMP280 pressure sensor
+  if (!bmp.begin()) {
+    Serial.println("Failed to initialize BMP280 sensor!");
+  }
+
+  // Initialize LoRa module
+  while (!LoRa.begin(433E6)) {
+    Serial.println(".");
+    delay(500);
+  }
+  Serial.println("LoRa radio initialized");
+
+  // Initialize GPS module
+  Serial2.begin(9600);
+
+  // Initialize MPU6050 accelerometer/gyroscope
+  if (!mpu.begin()) {
+    Serial.println("Failed to initialize MPU6050 sensor!");
+  }
+
+  // Enable the watchdog timer with a timeout period of 8 seconds
+  wdt_enable(WDTO_8S);
+}
+
+void loop() {
+
+  // Reset watchdog timer
+  wdt_reset();
+
+  // Check if RBF button is pressed
+  if (digitalRead(rbfPin) == LOW) {
+    // RBF button is pressed
+    if (!rbfButtonPressed) {
+      // Set flag to indicate that RBF button is pressed
+      rbfButtonPressed = true;
+      Serial.println("RBF button pressed");
+    }
+  } else {
+    // RBF button is not pressed
+    if (rbfButtonPressed) {
+      // Set flag to indicate that RBF button is not pressed
+      rbfButtonPressed = false;
+      Serial.println("RBF button released");
+    }
+  }
+
+  // Read data from sensors and transmit it through LoRa module if RBF button is not pressed
+  if (!rbfButtonPressed) {
+    transmitData();
+  }
+
+  // Delay before next transmission
+  delay(5000);
+}
+  
+  }
+  
+  void transmitData() {
+  // Read data from sensors
+  float pressure = bmp.readPressure();
+  float altitude = bmp.readAltitude();
+  float temperature = bmp.readTemperature();
+  int xAccel = mpu.getAccelerationX();
+  int yAccel = mpu.getAccelerationY();
+  int zAccel = mpu.getAccelerationZ();
+  int xGyro = mpu.getRotationX();
+  int yGyro = mpu.getRotationY();
+  int zGyro = mpu.getRotationZ();
+
+  // Read data from GPS module
+  while (Serial2.available()) {
+    gps.encode(Serial2.read());
+  }
+
+  // Format sensor data for transmission
+  String data = "Pressure: " + String(pressure) + " Pa\n";
+  data += "Altitude: " + String(altitude) + " m\n";
+  data += "Temperature: " + String(temperature) + " C\n";
+  data += "Acceleration (x,y,z): (" + String(xAccel) + "," + String(yAccel) + "," + String(zAccel) + ")\n";
+  data += "Gyroscope (x,y,z): (" + String(xGyro) + "," + String(yGyro) + "," + String(zGyro) + ")\n";
+
+  // Transmit data through LoRa module
+  LoRa.beginPacket();
+  LoRa.print(data);
+  LoRa.endPacket();
+  Serial.println("Data transmitted through LoRa module");
+}
